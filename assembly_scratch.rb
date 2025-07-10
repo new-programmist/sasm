@@ -22,11 +22,25 @@ class DUMMYPEN
   end
 end
 $main = self
+def self.key_down?(key)
+  Window.key_down?(key)
+end
 def self.draw_line(x1, y1, x2, y2, color, thickness)
   Line.new(x1: x1, y1: y1, x2: x2, y2: y2, width: thickness, color: color)
   Circle.new(x: x1, y: y1, radius: thickness / 2, color: color)
   Circle.new(x: x2, y: y2, radius: thickness / 2, color: color)
 end
+
+$pressed_keys = {}
+
+on :key_down do |event|
+  $pressed_keys[event.key] = true
+end
+
+on :key_up do |event|
+  $pressed_keys[event.key] = false
+end
+
 class PEN
   def initialize
     Window.set title: "Assembly Scratch", width: 500, height: 500
@@ -63,7 +77,7 @@ class PEN
   end
   def down
     @down = true
-    $main.draw_line(@x, @y, @x + 100, @y + 100, @color, @thickness)
+    $main.draw_line(@x, @y, @x, @y, @color, @thickness)
   end
   def up
     @down = false
@@ -90,6 +104,102 @@ class COMPILER
     "ufloat" => "3",
     "FORMAT_UFLOAT" => "3",
   })
+  def self.TYPEHASH
+    @TYPEHASH
+  end
+  def self.KEYHASH
+    @KEYHASH
+  end
+  @KEYHASH = Hash.new{|h, k| h[k] = k.to_s }
+  [
+    "`",
+"1",
+"2",
+"3",
+"4",
+"5",
+"6",
+"7",
+"8",
+"9",
+"0",
+"-",
+"=",
+"backspace",
+"q",
+"w",
+"e",
+"r",
+"t",
+"y",
+"u",
+"i",
+"o",
+"p",
+"a",
+"s",
+"d",
+"f",
+"g",
+"h",
+"j",
+"k",
+"l",
+"z",
+"x",
+"c",
+"v",
+"b",
+"n",
+"m",
+"[",
+"]",
+"\\",
+";",
+"'",
+",",
+".",
+"/",
+"tab",
+"capslock",
+"left shift",
+"backspace",
+"return",
+"right shift",
+"left ctrl",
+"left alt",
+"space",
+"right alt",
+"right gui",
+"right ctrl",
+"up",
+"down",
+"left",
+"right",
+"home",
+"end",
+"insert",
+"delete",
+"pageup",
+"pagedown",
+"f1",
+"f2",
+"f3",
+"f4",
+"f5",
+"f6",
+"f7",
+"f8",
+"f9",
+"f10",
+"f11",
+"f12",
+"scrolllock",
+"pause",
+"escape",
+  ].each_with_index do |k, i|
+    @KEYHASH[k] = i.to_s(16).rjust(4, "0")
+  end
   def initialize(program, memory = "000000000"*65536)
     @program = program
     @variables = {}
@@ -128,7 +238,7 @@ class COMPILER
       end
       #args = line.split(/\s+/)
       args = line.split
-      if ["SET", "CP", "ADD", "SUB", "MUL", "DIV", "JMP1IF", "JMP", "PRINT", "PACK", "JMP1IF==", "JMP1IF<", "JMP1IF>", "JMP1IF<=", "JMP1IF>=", "JMPBY", "FORMAT", "CPCFROM", "CPCTO", "PENGOTO", "PENCOLOR", "PENWIDTH", "PENUP", "PENDOWN", "PENCLEAR", "SAVELINK", "GOTOLINK", "ADDVAL", "SUBVAL", "MULVAL"].include?(args[0]) # all commands except TAG
+      if ["SET", "CP", "ADD", "SUB", "MUL", "DIV", "JMP1IF", "JMP", "PRINT", "PACK", "JMP1IF==", "JMP1IF<", "JMP1IF>", "JMP1IF<=", "JMP1IF>=", "JMPBY", "FORMAT", "CPCFROM", "CPCTO", "PENGOTO", "PENCOLOR", "PENWIDTH", "PENUP", "PENDOWN", "PENCLEAR", "SAVELINK", "GOTOLINK", "ADDVAL", "SUBVAL", "MULVAL", "KEY"].include?(args[0]) # all commands except TAG
         i += 1
       elsif args[0] == "TAG"
         @tags[args[1]] = i + 1
@@ -283,6 +393,11 @@ class COMPILER
         varid = varid(args[1])
         val = args[2]
         next "1C#{varid}#{val}".ljust(16, "*")
+      when "KEY"
+        i += 1
+        varid = varid(args[1])
+        keytype = COMPILER.KEYHASH[args[2]]
+        next "1D#{varid}#{keytype}".ljust(16, "*")
       end
     }
     VM.new(compiled.join.gsub("*", "0"), @memory)
@@ -290,6 +405,13 @@ class COMPILER
 end
 
 class VM
+  @REVERSEKEYHASH = {}
+  COMPILER.KEYHASH.each do |k, v|
+    @REVERSEKEYHASH[v] = k
+  end
+  def self.REVERSEKEYHASH
+    @REVERSEKEYHASH
+  end
   FORMAT_INT = 0
   FORMAT_UINT = 1
   FORMAT_FLOAT = 2
@@ -417,6 +539,10 @@ class VM
         x = args[0..3].to_i(16)
         yval = args[4..12]
         set_cell(x, encode(mem_format(x), value(x) * value_text(yval)))
+      when 0x1D #KEY x key
+        x = args[0..3].to_i(16)
+        key = VM.REVERSEKEYHASH[args[4..7]]
+        set_cell(x, $pressed_keys[key] ? "100000001" : "100000000")
       else
         raise "Unknown opcode #{id.to_s(16)}"
       end
